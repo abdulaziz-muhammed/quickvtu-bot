@@ -62,22 +62,30 @@ function textToSpeech($text, $chatId = null) {
     curl_close($ch);
     if ($httpCode !== 200 && $chatId) {
         sendMessage($chatId, "TTS DEBUG: HTTP $httpCode - " . substr($audio, 0, 300));
+        return null;
     }
     return $audio;
 }
 
 function sendVoiceNote($chatId, $audioData) {
     if (!$audioData) return;
-    $tmpFile = tempnam(sys_get_temp_dir(), 'tts_') . '.wav';
-    file_put_contents($tmpFile, $audioData);
-    $ch = curl_init(API_URL . 'sendAudio');
+    $wavFile = tempnam(sys_get_temp_dir(), 'tts_') . '.wav';
+    $oggFile = $wavFile . '.ogg';
+    file_put_contents($wavFile, $audioData);
+    exec("ffmpeg -y -i " . escapeshellarg($wavFile) . " -c:a libopus -b:a 32k " . escapeshellarg($oggFile) . " 2>&1");
+    if (!file_exists($oggFile)) {
+        unlink($wavFile);
+        return;
+    }
+    $ch = curl_init(API_URL . 'sendVoice');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, ['chat_id' => $chatId, 'audio' => new CURLFile($tmpFile, 'audio/wav', 'reply.wav')]);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, ['chat_id' => $chatId, 'voice' => new CURLFile($oggFile, 'audio/ogg', 'reply.ogg')]);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
     curl_exec($ch);
     curl_close($ch);
-    unlink($tmpFile);
+    unlink($wavFile);
+    unlink($oggFile);
 }
 
 function askAI($userText, $history) {
