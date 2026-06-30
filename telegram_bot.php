@@ -50,10 +50,11 @@ function transcribeVoice($fileUrl) {
 function textToSpeech($text) {
     $clean = trim(preg_replace('/ACTION:\{[^}]+\}/', '', $text));
     if (!$clean) return null;
+    if (strlen($clean) > 195) $clean = substr($clean, 0, 195);
     $ch = curl_init('https://api.groq.com/openai/v1/audio/speech');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(["model" => "playai-tts", "input" => $clean, "voice" => "Fritz-PlayAI", "response_format" => "wav"]));
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(["model" => "canopylabs/orpheus-v1-english", "input" => $clean, "voice" => "troy", "response_format" => "wav"]));
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . GROQ_KEY, 'Content-Type: application/json']);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
     $audio = curl_exec($ch);
@@ -77,14 +78,14 @@ function sendVoiceNote($chatId, $audioData) {
 
 function askAI($userText, $history) {
     $plans = "- 110MB Daily: N97 (ID: 100.01)\n- 230MB Daily: N194 (ID: 200.01)\n- 500MB Weekly: N485 (ID: 500.02)\n- 1GB Weekly: N776 (ID: 800.01)";
-    $systemPrompt = "You are QuickVTU bot, a friendly Nigerian assistant on Telegram that helps people buy MTN data.\nPlans:\n$plans\nSteps:\n1. Ask what plan they want\n2. Ask for their phone number\n3. NEVER use placeholder numbers\n4. Confirm number, ask YES\n5. After YES reply with ACTION:{\"buy\":true,\"plan\":\"PLANID\",\"phone\":\"NUMBER\"}\nKeep replies short.";
+    $systemPrompt = "You are QuickVTU bot, a friendly Nigerian assistant on Telegram that helps people buy MTN data.\nPlans:\n$plans\nSteps:\n1. Ask what plan they want\n2. Ask for their phone number\n3. NEVER use placeholder numbers\n4. Confirm number, ask YES\n5. After YES reply with ACTION:{\"buy\":true,\"plan\":\"PLANID\",\"phone\":\"NUMBER\"}\nKeep replies SHORT - max 150 characters.";
     $messages = [["role" => "system", "content" => $systemPrompt]];
     foreach (array_slice($history, -10) as $h) { $messages[] = $h; }
     $messages[] = ["role" => "user", "content" => $userText];
     $ch = curl_init('https://api.groq.com/openai/v1/chat/completions');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(["model" => "llama-3.1-8b-instant", "messages" => $messages, "max_tokens" => 200, "temperature" => 0.7]));
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(["model" => "llama-3.1-8b-instant", "messages" => $messages, "max_tokens" => 150, "temperature" => 0.7]));
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . GROQ_KEY, 'Content-Type: application/json']);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
     $res = curl_exec($ch); curl_close($ch);
@@ -104,9 +105,9 @@ function buyData($planId, $phone) {
     $response = curl_exec($ch); curl_close($ch);
     $decoded = json_decode($response, true);
     if (isset($decoded['status']) && $decoded['status'] === 'ORDER_RECEIVED') {
-        return ["success" => true, "msg" => "✅ Done! $desc sent to $phone."];
+        return ["success" => true, "msg" => "Done! $desc sent to $phone."];
     }
-    return ["success" => false, "msg" => "❌ Failed: " . ($decoded['status'] ?? $response)];
+    return ["success" => false, "msg" => "Failed: " . ($decoded['status'] ?? 'unknown error')];
 }
 
 $sessionFile = sys_get_temp_dir() . '/tg_' . $chatId . '.json';
