@@ -47,6 +47,34 @@ function transcribeVoice($fileUrl) {
     return $data['text'] ?? null;
 }
 
+function textToSpeech($text) {
+    $clean = trim(preg_replace('/ACTION:\{[^}]+\}/', '', $text));
+    if (!$clean) return null;
+    $ch = curl_init('https://api.groq.com/openai/v1/audio/speech');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(["model" => "playai-tts", "input" => $clean, "voice" => "Fritz-PlayAI", "response_format" => "wav"]));
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . GROQ_KEY, 'Content-Type: application/json']);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    $audio = curl_exec($ch);
+    curl_close($ch);
+    return $audio;
+}
+
+function sendVoiceNote($chatId, $audioData) {
+    if (!$audioData) return;
+    $tmpFile = tempnam(sys_get_temp_dir(), 'tts_') . '.ogg';
+    file_put_contents($tmpFile, $audioData);
+    $ch = curl_init(API_URL . 'sendVoice');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, ['chat_id' => $chatId, 'voice' => new CURLFile($tmpFile, 'audio/ogg', 'reply.ogg')]);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_exec($ch);
+    curl_close($ch);
+    unlink($tmpFile);
+}
+
 function askAI($userText, $history) {
     $plans = "- 110MB Daily: N97 (ID: 100.01)\n- 230MB Daily: N194 (ID: 200.01)\n- 500MB Weekly: N485 (ID: 500.02)\n- 1GB Weekly: N776 (ID: 800.01)";
     $systemPrompt = "You are QuickVTU bot, a friendly Nigerian assistant on Telegram that helps people buy MTN data.\nPlans:\n$plans\nSteps:\n1. Ask what plan they want\n2. Ask for their phone number\n3. NEVER use placeholder numbers\n4. Confirm number, ask YES\n5. After YES reply with ACTION:{\"buy\":true,\"plan\":\"PLANID\",\"phone\":\"NUMBER\"}\nKeep replies short.";
@@ -100,7 +128,9 @@ if (!$userText) exit;
 
 if ($userText === '/start') {
     $sessionData = ['history' => []];
-    sendMessage($chatId, "👋 Welcome to QuickVTU, $firstName!\n\n📶 110MB Daily - ₦97\n📶 230MB Daily - ₦194\n📶 500MB Weekly - ₦485\n📶 1GB Weekly - ₦776\n\nWhat would you like to buy?");
+    $welcome = "Welcome to QuickVTU, $firstName! 110MB Daily is 97 naira, 230MB Daily is 194 naira, 500MB Weekly is 485 naira, 1GB Weekly is 776 naira. What would you like to buy?";
+    sendMessage($chatId, "👋 $welcome");
+    sendVoiceNote($chatId, textToSpeech($welcome));
 } else {
     $aiReply = askAI($userText, $sessionData['history']);
     $sessionData['history'][] = ["role" => "user", "content" => $userText];
@@ -109,13 +139,16 @@ if ($userText === '/start') {
         $action = json_decode(str_replace('ACTION:', '', $matches[0]), true);
         if ($action && $action['buy'] && $action['plan'] && $action['phone']) {
             $clean = trim(preg_replace('/ACTION:\{[^}]+\}/', '', $aiReply));
-            sendMessage($chatId, $clean ?: "Processing...");
+            if ($clean) { sendMessage($chatId, $clean); sendVoiceNote($chatId, textToSpeech($clean)); }
             $result = buyData($action['plan'], $action['phone']);
             sendMessage($chatId, $result['msg']);
+            sendVoiceNote($chatId, textToSpeech($result['msg']));
             if ($result['success']) $sessionData = ['history' => []];
         }
     } else {
-        sendMessage($chatId, trim(preg_replace('/ACTION:\{[^}]+\}/', '', $aiReply)));
+        $clean = trim(preg_replace('/ACTION:\{[^}]+\}/', '', $aiReply));
+        sendMessage($chatId, $clean);
+        sendVoiceNote($chatId, textToSpeech($clean));
     }
 }
 file_put_contents($sessionFile, json_encode($sessionData));
