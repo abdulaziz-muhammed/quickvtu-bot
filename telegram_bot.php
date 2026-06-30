@@ -47,7 +47,7 @@ function transcribeVoice($fileUrl) {
     return $data['text'] ?? null;
 }
 
-function textToSpeech($text) {
+function textToSpeech($text, $chatId = null) {
     $clean = trim(preg_replace('/ACTION:\{[^}]+\}/', '', $text));
     if (!$clean) return null;
     if (strlen($clean) > 195) $clean = substr($clean, 0, 195);
@@ -58,7 +58,11 @@ function textToSpeech($text) {
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . GROQ_KEY, 'Content-Type: application/json']);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
     $audio = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
+    if ($httpCode !== 200 && $chatId) {
+        sendMessage($chatId, "TTS DEBUG: HTTP $httpCode - " . substr($audio, 0, 300));
+    }
     return $audio;
 }
 
@@ -131,7 +135,7 @@ if ($userText === '/start') {
     $sessionData = ['history' => []];
     $welcome = "Welcome to QuickVTU, $firstName! 110MB Daily is 97 naira, 230MB Daily is 194 naira, 500MB Weekly is 485 naira, 1GB Weekly is 776 naira. What would you like to buy?";
     sendMessage($chatId, "👋 $welcome");
-    sendVoiceNote($chatId, textToSpeech($welcome));
+    sendVoiceNote($chatId, textToSpeech($welcome, $chatId));
 } else {
     $aiReply = askAI($userText, $sessionData['history']);
     $sessionData['history'][] = ["role" => "user", "content" => $userText];
@@ -140,16 +144,16 @@ if ($userText === '/start') {
         $action = json_decode(str_replace('ACTION:', '', $matches[0]), true);
         if ($action && $action['buy'] && $action['plan'] && $action['phone']) {
             $clean = trim(preg_replace('/ACTION:\{[^}]+\}/', '', $aiReply));
-            if ($clean) { sendMessage($chatId, $clean); sendVoiceNote($chatId, textToSpeech($clean)); }
+            if ($clean) { sendMessage($chatId, $clean); sendVoiceNote($chatId, textToSpeech($clean, $chatId)); }
             $result = buyData($action['plan'], $action['phone']);
             sendMessage($chatId, $result['msg']);
-            sendVoiceNote($chatId, textToSpeech($result['msg']));
+            sendVoiceNote($chatId, textToSpeech($result['msg'], $chatId));
             if ($result['success']) $sessionData = ['history' => []];
         }
     } else {
         $clean = trim(preg_replace('/ACTION:\{[^}]+\}/', '', $aiReply));
         sendMessage($chatId, $clean);
-        sendVoiceNote($chatId, textToSpeech($clean));
+        sendVoiceNote($chatId, textToSpeech($clean, $chatId));
     }
 }
 file_put_contents($sessionFile, json_encode($sessionData));
